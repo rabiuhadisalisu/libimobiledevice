@@ -178,14 +178,13 @@ jobs:
         path: libimobiledevice.tar
 
   build-windows:
-    runs-on: windows-2019
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include: 
           { msystem: MINGW64, arch: x86_64 },
           { msystem: MINGW32, arch: i686   }
-        
     steps:
     - uses: msys2/setup-msys2@v2
       with:
@@ -201,69 +200,64 @@ jobs:
           autoconf
           automake-wrapper
     - name: prepare environment
-      shell: msys2
       run: |
-          dest=`echo ${{ matrix.msystem }} |tr [:upper:] [:lower:]`
-          echo "dest=$dest" >> $GITHUB_ENV
-          echo "target_triplet=`gcc -dumpmachine`" >> $GITHUB_ENV
-          git config --global core.autocrlf false
+        echo "target_triplet=$(${{ matrix.msystem }}-gcc -dumpmachine)" >> $GITHUB_ENV
+    - name: install dependencies
+      run: |
+        pacman -Syu --noconfirm --needed
+        pacman -S --noconfirm \
+          mingw-w64-${{ matrix.arch }}-python3-pip \
+          mingw-w64-${{ matrix.arch }}-python3-setuptools \
+          mingw-w64-${{ matrix.arch }}-python3-Cython
     - name: fetch libplist
       uses: dawidd6/action-download-artifact@v3
       with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         workflow: build.yml
-        name: libplist-latest_${{ matrix.arch }}-${{ env.dest }}
+        name: libplist-latest_${{ env.target_triplet }}
         repo: libimobiledevice/libplist
     - name: fetch libusbmuxd
       uses: dawidd6/action-download-artifact@v3
       with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         workflow: build.yml
-        name: libusbmuxd-latest_${{ matrix.arch }}-${{ env.dest }}
+        name: libusbmuxd-latest_${{ env.target_triplet }}
         repo: libimobiledevice/libusbmuxd
     - name: fetch libimobiledevice-glue
       uses: dawidd6/action-download-artifact@v3
       with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         workflow: build.yml
-        name: libimobiledevice-glue-latest_${{ matrix.arch }}-${{ env.dest }}
+        name: libimobiledevice-glue-latest_${{ env.target_triplet }}
         repo: libimobiledevice/libimobiledevice-glue
     - name: fetch libtatsu
       uses: dawidd6/action-download-artifact@v3
       with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         workflow: build.yml
-        name: libtatsu-latest_${{ matrix.arch }}-${{ env.dest }}
+        name: libtatsu-latest_${{ env.target_triplet }}
         repo: libimobiledevice/libtatsu
     - name: install external dependencies
-      shell: msys2
       run: |
-          mkdir extract
-          for I in *.tar; do
-            tar -C extract -xvf $I
-          done
-          cp -r extract/* /
+        mkdir extract
+        for I in *.tar; do
+          tar -C extract -xvf $I
+        done
+        cp -r extract/* /
     - uses: actions/checkout@v4
     - name: autogen
-      shell: msys2
-      run: ./autogen.sh CC=gcc CXX=g++ --enable-debug
+      run: bash ./autogen.sh PKG_CONFIG_PATH=/mingw${{ matrix.arch }}/lib/pkgconfig --enable-debug
     - name: make
-      shell: msys2
-      run: make
+      run: bash make
     - name: make install
-      shell: msys2
-      run: make install
+      run: bash make install
     - name: prepare artifact
-      shell: msys2
       run: |
-          mkdir -p dest
-          DESTDIR=`pwd`/dest make install
-          tar -C dest -cf libimobiledevice.tar ${{ env.dest }}
-    - name: zip Windows executable
-      run: |
-          zip -r libimobiledevice-windows.zip libimobiledevice.tar
+        mkdir -p dest
+        DESTDIR=$(pwd)/dest make install
+        tar -C dest -cf libimobiledevice.tar usr
     - name: publish artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libimobiledevice-windows_${{ matrix.arch }}-${{ env.dest }}
-        path: libimobiledevice-windows.zip
+        name: libimobiledevice-latest_${{ env.target_triplet }}
+        path: libimobiledevice.tar
