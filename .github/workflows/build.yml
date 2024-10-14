@@ -71,6 +71,7 @@ jobs:
       with:
         name: libimobiledevice-latest_${{env.target_triplet}}
         path: libimobiledevice.tar
+
   build-macOS:
     runs-on: macOS-latest
     steps:
@@ -139,13 +140,13 @@ jobs:
       run: |
           SDKDIR=`xcrun --sdk macosx --show-sdk-path`
           TESTARCHS="arm64 x86_64"
-          USEARCHS=
+          USEARCHS=()
           for ARCH in $TESTARCHS; do
-            if echo "int main(int argc, char **argv) { return 0; }" |clang -arch $ARCH -o /dev/null -isysroot $SDKDIR -x c - 2>/dev/null; then
-              USEARCHS="$USEARCHS -arch $ARCH"
+            if echo "int main(int argc, char **argv) { return 0; }" | clang -arch $ARCH -o /dev/null -isysroot $SDKDIR -x c - 2>/dev/null; then
+              USEARCHS+=("$ARCH")
             fi
           done
-          export CFLAGS="$USEARCHS -isysroot $SDKDIR"
+          export CFLAGS="-arch ${USEARCHS[*]} -isysroot $SDKDIR"
           echo "Using CFLAGS: $CFLAGS"
           PYTHON3_BIN=`xcrun -f python3`
           if test -x $PYTHON3_BIN; then
@@ -155,7 +156,7 @@ jobs:
             PYTHON_LIBS_PATH=$PYTHON_EXEC_PREFIX/lib
             PYTHON_FRAMEWORK_PATH=$PYTHON_EXEC_PREFIX/Python3
             export PYTHON_LIBS="-L$PYTHON_LIBS_PATH -lpython$PYTHON_VER"
-            export PYTHON_EXTRA_LDFLAGS="-Wl,-stack_size,1000000  -framework CoreFoundation $PYTHON_FRAMEWORK_PATH"
+            export PYTHON_EXTRA_LDFLAGS="-Wl,-stack_size,1000000 -framework CoreFoundation $PYTHON_FRAMEWORK_PATH"
           fi
           ./autogen.sh PKG_CONFIG_PATH=/usr/local/lib/pkgconfig --enable-debug \
               openssl_CFLAGS="-I${{ env.DEPSDIR }}/libressl-${{ env.LIBRESSL_VER }}/include" \
@@ -174,18 +175,16 @@ jobs:
       with:
         name: libimobiledevice-latest_macOS
         path: libimobiledevice.tar
+
   build-windows:
     runs-on: windows-2019
-    defaults:
-      run:
-        shell: msys2 {0}
     strategy:
       fail-fast: false
       matrix:
-        include: [
+        include: 
           { msystem: MINGW64, arch: x86_64 },
           { msystem: MINGW32, arch: i686   }
-        ]
+        
     steps:
     - uses: msys2/setup-msys2@v2
       with:
@@ -201,6 +200,7 @@ jobs:
           autoconf
           automake-wrapper
     - name: prepare environment
+      shell: msys2
       run: |
           dest=`echo ${{ matrix.msystem }} |tr [:upper:] [:lower:]`
           echo "dest=$dest" >> $GITHUB_ENV
@@ -235,6 +235,7 @@ jobs:
         name: libtatsu-latest_${{ matrix.arch }}-${{ env.dest }}
         repo: libimobiledevice/libtatsu
     - name: install external dependencies
+      shell: msys2
       run: |
           mkdir extract
           for I in *.tar; do
@@ -243,18 +244,25 @@ jobs:
           cp -r extract/* /
     - uses: actions/checkout@v4
     - name: autogen
+      shell: msys2
       run: ./autogen.sh CC=gcc CXX=g++ --enable-debug
     - name: make
+      shell: msys2
       run: make
     - name: make install
+      shell: msys2
       run: make install
     - name: prepare artifact
+      shell: msys2
       run: |
           mkdir -p dest
           DESTDIR=`pwd`/dest make install
           tar -C dest -cf libimobiledevice.tar ${{ env.dest }}
+    - name: zip Windows executable
+      run: |
+          zip -r libimobiledevice-windows.zip libimobiledevice.tar
     - name: publish artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libimobiledevice-latest_${{ matrix.arch }}-${{ env.dest }}
-        path: libimobiledevice.tar
+        name: libimobiledevice-windows_${{ matrix.arch }}-${{ env.dest }}
+        path: libimobiledevice-windows.zip
